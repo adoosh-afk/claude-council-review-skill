@@ -22,9 +22,38 @@ Runs **Gemini 3.1 Pro**, **Claude Opus 4.7**, and **Codex** (OpenAI) independent
 If `GEMINI_API_KEY` is missing, ask the user to set it. If `claude` or `codex` isn't on PATH / isn't logged in, either ask before running or skip that reviewer (`COUNCIL_SKIP=codex`). The script needs at least 2 reviewers to run.
 
 Optional overrides:
-- `ANTHROPIC_MODEL` (default `claude-opus-4-7`) — passed to `claude --model`
-- `GEMINI_MODEL` (default `gemini-3.1-pro-preview`)
+- `ANTHROPIC_MODEL` (default `opus`) — passed to `claude --model`
+- `GEMINI_MODEL` (default `gemini-flash-latest`)
 - `CODEX_MODEL` (default unset → uses your `~/.codex/config.toml` default) — passed to `codex exec -m`
+
+### Model selection
+
+The two defaults are **latest-tracking aliases**, not pinned versions, so the council does not
+quietly review with a superseded model months after a new release. `opus` is the Claude CLI's
+documented "alias for the latest model" of that tier; `gemini-flash-latest` is a floating alias on
+the Gemini API (`gemini-pro-latest` also exists). Codex has neither — it has no `models`
+subcommand and no `latest` alias, and under ChatGPT-account auth an explicit `-m gpt-5.6` is
+rejected with `400 ... not supported when using Codex with a ChatGPT account`, so leaving
+`CODEX_MODEL` unset and letting it inherit `~/.codex/config.toml` is both the working option and
+the one that tracks whatever you have moved to.
+
+**Pin a concrete id when you need a reproducible or verifiable reviewer.** The `-latest` aliases
+report an opaque version string from the Gemini metadata endpoint, so you cannot confirm which
+concrete model answered. For a governance-relevant run, pin explicitly (e.g.
+`GEMINI_MODEL=gemini-3.6-flash`) and record it.
+
+> **Trap: a sourced `.env` silently downgrades the council.** If you keep `GEMINI_API_KEY` in a
+> file like `~/.gemini/.env` and that file also exports `GEMINI_MODEL`, then sourcing it for the
+> key also overrides the model — every run in that shell uses the pinned model instead of the
+> default, with no warning beyond the banner. Export the model **after** sourcing the env file:
+>
+> ```bash
+> set -a; . ~/.gemini/.env; set +a
+> export GEMINI_MODEL=gemini-3.6-flash   # must come after, or the .env value wins
+> ```
+>
+> The script prints `> Models: claude=… (default|from $VAR), gemini=…, codex=…` at start so you
+> can see which values were inherited. Check that line before trusting a review.
 - `CLAUDE_BIN` (default `claude`)
 - `CODEX_BIN` (default `codex`)
 - `COUNCIL_SKIP` (default empty) — comma-separated reviewer names to skip (`gemini`, `claude`, `codex`). Useful when one CLI is rate-limited or temporarily down.
