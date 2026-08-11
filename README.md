@@ -1,6 +1,8 @@
 # council-review
 
-A [Claude Code](https://claude.com/claude-code) skill that runs a multi-model "council" code review on a git diff. **Gemini 3.1 Pro**, **Claude Opus 4.7**, and **Codex** review the same diff independently in parallel, then Claude synthesises a single consolidated report that deduplicates findings, marks disagreements as `DISPUTED`, and adds a final "what both missed" pass.
+A [Claude Code](https://claude.com/claude-code) skill that runs a multi-model "council" code review on a git diff. **Gemini**, **Claude** and **Codex** review the same diff independently in parallel, then Claude synthesises a single consolidated report that deduplicates findings, marks disagreements as `DISPUTED`, and adds a final "what both missed" pass.
+
+Each seat defaults to a **latest-tracking alias** rather than a pinned version, so the council keeps pace with new releases instead of silently reviewing with a superseded model — see [Model selection](#model-selection).
 
 Useful when a single model is not enough confidence: pre-merge gates on security-sensitive changes, large refactors, architectural decisions, or any time you want a real second (and third) opinion before shipping.
 
@@ -16,7 +18,7 @@ Useful when a single model is not enough confidence: pre-merge gates on security
         ▼                     ▼                     ▼
   ┌───────────┐         ┌───────────┐         ┌───────────┐
   │  Gemini   │         │  Claude   │         │   Codex   │
-  │  3.1 Pro  │         │ Opus 4.7  │         │           │
+  │ (latest)  │         │ (latest)  │         │ (config)  │
   └─────┬─────┘         └─────┬─────┘         └─────┬─────┘
         │                     │                     │
         └─────────────────────┼─────────────────────┘
@@ -52,6 +54,35 @@ Claude Code picks it up automatically. Trigger it by asking for a "council revie
 - **`codex` CLI** on `PATH` and logged in. The script invokes `codex exec --skip-git-repo-check`.
 
 Missing any one of these? The corresponding reviewer is skipped, the rest of the council still runs, and `run-meta.json` records which reviewers succeeded.
+
+## Model selection
+
+| Seat | Default | Why |
+|---|---|---|
+| Claude | `opus` | The Claude CLI's documented alias for the latest model of that tier. |
+| Gemini | `gemini-flash-latest` | Floating alias on the Gemini API. `gemini-pro-latest` also exists. |
+| Codex | unset → `~/.codex/config.toml` | No `models` subcommand and no `latest` alias exist. Under ChatGPT-account auth an explicit `-m gpt-5.6` returns `400 ... not supported when using Codex with a ChatGPT account`, so inheriting your configured default is both what works and what tracks your current choice. |
+
+Override any seat with `ANTHROPIC_MODEL`, `GEMINI_MODEL` or `CODEX_MODEL`. Pin a concrete id
+(`GEMINI_MODEL=gemini-3.6-flash`) when you need the run to be reproducible or auditable — the
+`-latest` aliases report an opaque version string, so you cannot confirm which model actually
+answered.
+
+> **Trap: a sourced `.env` silently downgrades the council.** If `GEMINI_API_KEY` lives in a file
+> such as `~/.gemini/.env` and that file also exports `GEMINI_MODEL`, sourcing it for the key also
+> overrides the model, so every run in that shell uses the pinned value. Export the model **after**
+> sourcing:
+>
+> ```bash
+> set -a; . ~/.gemini/.env; set +a
+> export GEMINI_MODEL=gemini-3.6-flash   # after, or the .env value wins
+> ```
+>
+> Every run now prints its model provenance so this is visible rather than silent:
+>
+> ```
+> > Models: claude=opus (default), gemini=gemini-3.5-flash (from $GEMINI_MODEL), codex=~/.codex/config.toml default (default)
+> ```
 
 ## Usage
 

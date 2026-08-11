@@ -6,10 +6,23 @@
 //   node council-review.mjs --diff path/to/diff.patch
 //
 // Env: GEMINI_API_KEY (required)
-//      ANTHROPIC_MODEL (default claude-opus-4-7) — passed to `claude -p --model`
-//      GEMINI_MODEL    (default gemini-3.1-pro-preview)
+//      ANTHROPIC_MODEL (default `opus`) — passed to `claude -p --model`. `opus` is the
+//                       Claude CLI's documented alias for the latest model of that tier,
+//                       so the default tracks new releases instead of going stale.
+//      GEMINI_MODEL    (default `gemini-flash-latest`) — a floating alias on the Gemini
+//                       API, for the same reason. Pin a concrete id (e.g.
+//                       `gemini-3.6-flash`) when you need a reproducible reviewer.
 //      CODEX_MODEL     (optional) — passed to `codex exec -m`. If unset, codex uses
-//                       whatever model is configured in ~/.codex/config.toml.
+//                       whatever model is configured in ~/.codex/config.toml. Leaving it
+//                       unset is usually right: there is no `latest` alias, and under
+//                       ChatGPT-account auth an explicit `-m gpt-5.6` is rejected with
+//                       400 "not supported when using Codex with a ChatGPT account",
+//                       whereas the account's configured default works.
+//
+// WARNING: any of the model vars set in your environment silently overrides the default
+// above. A `~/.gemini/.env` that exports GEMINI_MODEL alongside GEMINI_API_KEY will
+// downgrade every run in that shell. The banner prints the source of each model so an
+// inherited value is visible rather than silent.
 //      CLAUDE_BIN      (default `claude`) — Claude Code CLI binary
 //      CODEX_BIN       (default `codex`)  — Codex CLI binary
 //      COUNCIL_SKIP    (optional, comma-separated) — names of reviewers to skip
@@ -30,8 +43,10 @@ import { join } from "node:path";
 
 const args = parseArgs(argv.slice(2));
 const GEMINI_KEY = env.GEMINI_API_KEY;
-const CLAUDE_MODEL = env.ANTHROPIC_MODEL || "claude-opus-4-7";
-const GEMINI_MODEL = env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+// Defaults are latest-tracking aliases so the council does not quietly review with a
+// superseded model as new releases land. See the header note on the override hazard.
+const CLAUDE_MODEL = env.ANTHROPIC_MODEL || "opus";
+const GEMINI_MODEL = env.GEMINI_MODEL || "gemini-flash-latest";
 const CODEX_MODEL = env.CODEX_MODEL || null; // null → codex uses its config default
 const CLAUDE_BIN = env.CLAUDE_BIN || "claude";
 const CODEX_BIN = env.CODEX_BIN || "codex";
@@ -74,6 +89,14 @@ if (!SKIP.has("codex")) reviewers.push({ name: "codex", label: CODEX_MODEL || "c
 
 if (reviewers.length < 2) die(`Need at least 2 reviewers; got ${reviewers.length} after applying COUNCIL_SKIP=${[...SKIP].join(",")}`);
 
+// Print where each model string came from. An inherited ANTHROPIC_MODEL/GEMINI_MODEL (a
+// sourced ~/.gemini/.env is the common case) otherwise downgrades the council invisibly.
+const provenance = (envVar) => (env[envVar] ? `from $${envVar}` : "default");
+console.error(
+  `> Models: claude=${CLAUDE_MODEL} (${provenance("ANTHROPIC_MODEL")}), ` +
+    `gemini=${GEMINI_MODEL} (${provenance("GEMINI_MODEL")}), ` +
+    `codex=${CODEX_MODEL || "~/.codex/config.toml default"} (${provenance("CODEX_MODEL")})`,
+);
 console.error(`> Requesting reviews from: ${reviewers.map((r) => r.label).join(", ")}…`);
 const results = await Promise.allSettled(reviewers.map((r) => r.fn()));
 
